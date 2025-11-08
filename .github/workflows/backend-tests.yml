@@ -42,11 +42,15 @@ jobs:
 
     - name: Run import tests (quick sanity check)
       working-directory: ./backend
+      env:
+        AWS_CONFIG_BUCKET: test-bucket
       run: |
         pytest tests/test_imports.py -v
 
     - name: Run all tests with coverage
       working-directory: ./backend
+      env:
+        AWS_CONFIG_BUCKET: test-bucket
       run: |
         pytest --cov=app --cov-report=xml --cov-report=term-missing
 
