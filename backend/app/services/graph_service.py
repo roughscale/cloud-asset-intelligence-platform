@@ -2,6 +2,7 @@
 Graph database service for asset and enrichment operations.
 """
 
+import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -57,8 +58,8 @@ class GraphService:
                 "region": asset.region,
                 "account_id": asset.account_id,
                 "availability_zone": asset.availability_zone,
-                "source_tags": asset.source_tags,
-                "configuration": asset.configuration,
+                "source_tags": json.dumps(asset.source_tags),  # Serialize as JSON string
+                "configuration": json.dumps(asset.configuration),  # Serialize as JSON string
                 "state": asset.state,
                 "description": asset.description,
                 "discovered_at": asset.metadata.discovered_at.isoformat(),

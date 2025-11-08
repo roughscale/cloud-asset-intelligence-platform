@@ -151,7 +151,7 @@ class TestGraphQLEndpoint:
 class TestCollectionEndpoints:
     """Tests for collection endpoints."""
 
-    @patch('app.services.collection_service.CollectionService')
+    @patch('app.services.CollectionService')
     def test_trigger_aws_config_collection(self, mock_service_class, test_client):
         """Test triggering AWS Config collection."""
         mock_service = MagicMock()
@@ -171,7 +171,7 @@ class TestCollectionEndpoints:
         assert data["status"] == "completed"
         assert data["assets_collected"] == 150
 
-    @patch('app.services.collection_service.CollectionService')
+    @patch('app.services.CollectionService')
     def test_list_snapshots(self, mock_service_class, test_client):
         """Test listing available snapshots."""
         mock_service = MagicMock()

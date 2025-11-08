@@ -70,8 +70,12 @@ class TestAWSConfigCollector:
             ]
         }
 
+        # Gzip the snapshot data since file ends with .gz
         import json
-        snapshot_data = json.dumps(mock_aws_config_snapshot).encode('utf-8')
+        import gzip
+        snapshot_json = json.dumps(mock_aws_config_snapshot).encode('utf-8')
+        snapshot_data = gzip.compress(snapshot_json)
+
         mock_s3_client.get_object.return_value = {
             "Body": MagicMock(read=lambda: snapshot_data)
         }

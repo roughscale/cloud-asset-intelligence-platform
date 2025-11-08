@@ -10,6 +10,20 @@ from app.db import get_neo4j_client
 logger = logging.getLogger(__name__)
 
 
+# Import types for proper return values
+# Note: Import here to avoid circular imports
+def _get_database_stats_type():
+    """Get DatabaseStats type (lazy import to avoid circular dependency)."""
+    from app.api.graphql.types import DatabaseStats
+    return DatabaseStats
+
+
+def _get_asset_type():
+    """Get Asset type (lazy import to avoid circular dependency)."""
+    from app.api.graphql.types import Asset
+    return Asset
+
+
 def get_assets(filter_input, limit: int = 100, offset: int = 0) -> list:
     """
     Get assets with optional filtering.
@@ -97,24 +111,25 @@ def get_asset_by_id(asset_id: str) -> Optional[dict]:
         return None
 
 
-def get_stats() -> dict:
+def get_stats():
     """
     Get database statistics.
 
     Returns:
-        dict: Database statistics
+        DatabaseStats: Database statistics object
     """
+    DatabaseStats = _get_database_stats_type()
     neo4j = get_neo4j_client()
     stats = neo4j.get_stats()
 
-    return {
-        "total_assets": stats.get("total_assets", 0),
-        "total_enrichments": stats.get("total_enrichments", 0),
-        "total_relationships": stats.get("total_relationships", 0),
-    }
+    return DatabaseStats(
+        total_assets=stats.get("total_assets", 0),
+        total_enrichments=stats.get("total_enrichments", 0),
+        total_relationships=stats.get("total_relationships", 0),
+    )
 
 
-def _format_asset(asset_data: dict) -> dict:
+def _format_asset(asset_data: dict):
     """
     Format asset data for GraphQL response.
 
@@ -122,8 +137,10 @@ def _format_asset(asset_data: dict) -> dict:
         asset_data: Raw asset data from Neo4j
 
     Returns:
-        dict: Formatted asset data
+        Asset: Formatted asset object
     """
+    Asset = _get_asset_type()
+
     # Ensure datetime fields are datetime objects
     discovered_at = asset_data.get("discovered_at")
     last_seen = asset_data.get("last_seen")
@@ -133,15 +150,15 @@ def _format_asset(asset_data: dict) -> dict:
     if isinstance(last_seen, str):
         last_seen = datetime.fromisoformat(last_seen)
 
-    return {
-        "id": asset_data.get("id"),
-        "type": asset_data.get("type"),
-        "name": asset_data.get("name"),
-        "region": asset_data.get("region"),
-        "account_id": asset_data.get("account_id"),
-        "tags": asset_data.get("source_tags", {}),
-        "configuration": asset_data.get("configuration", {}),
-        "state": asset_data.get("state"),
-        "discovered_at": discovered_at or datetime.utcnow(),
-        "last_seen": last_seen or datetime.utcnow(),
-    }
+    return Asset(
+        id=asset_data.get("id"),
+        type=asset_data.get("type"),
+        name=asset_data.get("name"),
+        region=asset_data.get("region"),
+        account_id=asset_data.get("account_id"),
+        tags=asset_data.get("source_tags", {}),
+        configuration=asset_data.get("configuration", {}),
+        state=asset_data.get("state"),
+        discovered_at=discovered_at or datetime.utcnow(),
+        last_seen=last_seen or datetime.utcnow(),
+    )

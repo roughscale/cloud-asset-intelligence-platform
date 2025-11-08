@@ -77,14 +77,18 @@ class AWSConfigCollector(BaseCollector):
 
     def _get_latest_snapshot_key(self) -> str | None:
         """
-        Get the latest Config snapshot key from S3.
+        Get the latest Config snapshot or history file key from S3.
+
+        Supports both ConfigSnapshot (full snapshots) and ConfigHistory (incremental)
+        files. Prefers ConfigSnapshot if available, falls back to ConfigHistory.
 
         Returns:
-            str | None: S3 key of latest snapshot or None
+            str | None: S3 key of latest snapshot/history file or None
         """
         try:
-            # AWS Config typically stores snapshots in a date-based structure
-            # Format: AWSLogs/{account-id}/Config/{region}/YYYY/MM/DD/ConfigSnapshot/...
+            # AWS Config stores files in a date-based structure
+            # Snapshot: AWSLogs/{account-id}/Config/{region}/YYYY/MM/DD/ConfigSnapshot/...
+            # History: AWSLogs/{account-id}/Config/{region}/YYYY/MM/DD/ConfigHistory/...
 
             # For simplicity in Phase 1, list all objects and get the most recent
             # In production, you'd want to optimize this with prefixes
@@ -98,7 +102,7 @@ class AWSConfigCollector(BaseCollector):
             if "Contents" not in response:
                 return None
 
-            # Filter for ConfigSnapshot files and get the most recent
+            # First, try to find ConfigSnapshot files (preferred)
             snapshot_files = [
                 obj
                 for obj in response["Contents"]
@@ -106,27 +110,44 @@ class AWSConfigCollector(BaseCollector):
                 and obj["Key"].endswith(".json.gz")
             ]
 
-            if not snapshot_files:
+            if snapshot_files:
+                latest = max(snapshot_files, key=lambda x: x["LastModified"])
+                logger.info(f"Found latest ConfigSnapshot: {latest['Key']}")
+                return latest["Key"]
+
+            # Fall back to ConfigHistory files
+            history_files = [
+                obj
+                for obj in response["Contents"]
+                if "ConfigHistory" in obj["Key"]
+                and obj["Key"].endswith(".json.gz")
+            ]
+
+            if not history_files:
+                logger.warning("No ConfigSnapshot or ConfigHistory files found")
                 return None
 
             # Sort by last modified and get the latest
-            latest = max(snapshot_files, key=lambda x: x["LastModified"])
-            logger.info(f"Found latest snapshot: {latest['Key']}")
+            latest = max(history_files, key=lambda x: x["LastModified"])
+            logger.info(f"Found latest ConfigHistory: {latest['Key']}")
             return latest["Key"]
 
         except Exception as e:
-            logger.error(f"Error finding latest snapshot: {e}")
+            logger.error(f"Error finding latest snapshot/history: {e}")
             return None
 
     def _download_snapshot(self, s3_key: str) -> dict | None:
         """
-        Download and parse Config snapshot from S3.
+        Download and parse Config snapshot or history file from S3.
+
+        Both ConfigSnapshot and ConfigHistory files have the same structure
+        with a "configurationItems" array.
 
         Args:
-            s3_key: S3 key of the snapshot
+            s3_key: S3 key of the snapshot or history file
 
         Returns:
-            dict | None: Parsed snapshot data or None
+            dict | None: Parsed snapshot/history data or None
         """
         try:
             logger.info(f"Downloading snapshot: {s3_key}")
@@ -194,6 +215,11 @@ class AWSConfigCollector(BaseCollector):
             resource_status = config_item.get("resourceStatus")
             state = resource_status or config_status
 
+            # Skip deleted resources
+            if config_status == "ResourceDeleted":
+                logger.debug(f"Skipping deleted resource: {resource_id}")
+                return None
+
             # Create metadata
             capture_time = config_item.get("configurationItemCaptureTime")
             creation_time = config_item.get("resourceCreationTime")
@@ -236,10 +262,10 @@ class AWSConfigCollector(BaseCollector):
 
     def list_available_snapshots(self) -> list[dict]:
         """
-        List all available Config snapshots in S3.
+        List all available Config snapshots and history files in S3.
 
         Returns:
-            list[dict]: List of snapshot metadata
+            list[dict]: List of snapshot/history file metadata
         """
         try:
             response = self.s3_client.list_objects_v2(
@@ -249,20 +275,23 @@ class AWSConfigCollector(BaseCollector):
             if "Contents" not in response:
                 return []
 
-            snapshots = [
+            # Include both ConfigSnapshot and ConfigHistory files
+            files = [
                 {
                     "key": obj["Key"],
                     "size": obj["Size"],
                     "last_modified": obj["LastModified"],
+                    "type": "snapshot" if "ConfigSnapshot" in obj["Key"] else "history"
                 }
                 for obj in response["Contents"]
-                if "ConfigSnapshot" in obj["Key"] and obj["Key"].endswith(".json.gz")
+                if ("ConfigSnapshot" in obj["Key"] or "ConfigHistory" in obj["Key"])
+                and obj["Key"].endswith(".json.gz")
             ]
 
             # Sort by last modified (newest first)
-            snapshots.sort(key=lambda x: x["last_modified"], reverse=True)
+            files.sort(key=lambda x: x["last_modified"], reverse=True)
 
-            return snapshots
+            return files
 
         except Exception as e:
             logger.error(f"Error listing snapshots: {e}")

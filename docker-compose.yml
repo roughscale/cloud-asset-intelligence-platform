@@ -55,15 +55,16 @@ services:
       - REDIS_URL=redis://redis:6379
       - AWS_REGION=${AWS_REGION:-ap-southeast-2}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-southeast-2}
-      - AWS_PROFILE=${AWS_PROFILE:-default}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
       - AWS_CONFIG_BUCKET=${AWS_CONFIG_BUCKET}
-      - AWS_AUTH_STRATEGY=${AWS_AUTH_STRATEGY:-profile}
       - TZ=${TZ:-Australia/Sydney}
       - LOCALE=${LOCALE:-en_AU}
       - ENVIRONMENT=development
     volumes:
       - ./backend:/app
-      - ~/.aws:/root/.aws:ro  # Mount AWS credentials (read-only)
+      - ~/.aws:/home/appuser/.aws:ro  # Mount AWS credentials (read-only)
     depends_on:
       neo4j:
         condition: service_healthy
@@ -86,15 +87,16 @@ services:
       - REDIS_URL=redis://redis:6379
       - AWS_REGION=${AWS_REGION:-ap-southeast-2}
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-southeast-2}
-      - AWS_PROFILE=${AWS_PROFILE:-default}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
       - AWS_CONFIG_BUCKET=${AWS_CONFIG_BUCKET}
-      - AWS_AUTH_STRATEGY=${AWS_AUTH_STRATEGY:-profile}
       - TZ=${TZ:-Australia/Sydney}
       - LOCALE=${LOCALE:-en_AU}
       - ENVIRONMENT=development
     volumes:
       - ./backend:/app
-      - ~/.aws:/root/.aws:ro
+      - ~/.aws:/home/appuser/.aws:ro  # Mount AWS credentials (read-only)
     depends_on:
       neo4j:
         condition: service_healthy
