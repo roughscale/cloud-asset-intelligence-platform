@@ -1,0 +1,137 @@
+services:
+  # Neo4j Graph Database
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: asset-inventory-neo4j
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=neo4j/asset-inventory-dev
+      - NEO4J_dbms_memory_pagecache_size=512M
+      - NEO4J_dbms_memory_heap_max__size=1G
+      - NEO4J_PLUGINS=["apoc"]
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    networks:
+      - asset-inventory-network
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p asset-inventory-dev 'RETURN 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache & Task Queue
+  redis:
+    image: redis:7-alpine
+    container_name: asset-inventory-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - asset-inventory-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Backend API (FastAPI)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: asset-inventory-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=asset-inventory-dev
+      - REDIS_URL=redis://redis:6379
+      - AWS_REGION=${AWS_REGION:-ap-southeast-2}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-southeast-2}
+      - AWS_PROFILE=${AWS_PROFILE:-default}
+      - AWS_CONFIG_BUCKET=${AWS_CONFIG_BUCKET}
+      - AWS_AUTH_STRATEGY=${AWS_AUTH_STRATEGY:-profile}
+      - TZ=${TZ:-Australia/Sydney}
+      - LOCALE=${LOCALE:-en_AU}
+      - ENVIRONMENT=development
+    volumes:
+      - ./backend:/app
+      - ~/.aws:/root/.aws:ro  # Mount AWS credentials (read-only)
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - asset-inventory-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker (Background Tasks)
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: asset-inventory-celery
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=asset-inventory-dev
+      - REDIS_URL=redis://redis:6379
+      - AWS_REGION=${AWS_REGION:-ap-southeast-2}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-southeast-2}
+      - AWS_PROFILE=${AWS_PROFILE:-default}
+      - AWS_CONFIG_BUCKET=${AWS_CONFIG_BUCKET}
+      - AWS_AUTH_STRATEGY=${AWS_AUTH_STRATEGY:-profile}
+      - TZ=${TZ:-Australia/Sydney}
+      - LOCALE=${LOCALE:-en_AU}
+      - ENVIRONMENT=development
+    volumes:
+      - ./backend:/app
+      - ~/.aws:/root/.aws:ro
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - asset-inventory-network
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+
+  # Frontend (Next.js) - Coming in Phase 2
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: asset-inventory-frontend
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - NEXT_PUBLIC_API_URL=http://localhost:8000
+  #     - NEXT_PUBLIC_GRAPHQL_URL=http://localhost:8000/graphql
+  #   volumes:
+  #     - ./frontend:/app
+  #     - /app/node_modules
+  #     - /app/.next
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - asset-inventory-network
+  #   command: npm run dev
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
+  redis_data:
+
+networks:
+  asset-inventory-network:
+    driver: bridge
