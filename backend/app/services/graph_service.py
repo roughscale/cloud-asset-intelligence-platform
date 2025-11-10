@@ -53,7 +53,7 @@ class GraphService:
 
             parameters = {
                 "id": asset.id,
-                "type": asset.type.value,
+                "type": asset.type,
                 "name": asset.name,
                 "region": asset.region,
                 "account_id": asset.account_id,

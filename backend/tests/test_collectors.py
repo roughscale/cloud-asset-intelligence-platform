@@ -5,7 +5,6 @@ Tests for AWS collectors.
 import pytest
 from unittest.mock import MagicMock, patch
 from app.collectors.aws_config import AWSConfigCollector
-from app.models.enums import AssetType
 
 
 class TestAWSConfigCollector:
@@ -32,7 +31,7 @@ class TestAWSConfigCollector:
         asset = collector.transform(sample_config_item)
 
         assert asset is not None
-        assert asset.type == AssetType.ECS_SERVICE
+        assert asset.type == "AWS::ECS::Service"
         assert asset.name == "api-service"
         assert asset.region == "ap-southeast-2"
         assert asset.metadata.source == "aws_config"
@@ -87,5 +86,5 @@ class TestAWSConfigCollector:
         assets = collector.collect()
 
         assert len(assets) == 2  # ECS service and S3 bucket
-        assert assets[0].type == AssetType.ECS_SERVICE
-        assert assets[1].type == AssetType.S3_BUCKET
+        assert assets[0].type == "AWS::ECS::Service"
+        assert assets[1].type == "AWS::S3::Bucket"

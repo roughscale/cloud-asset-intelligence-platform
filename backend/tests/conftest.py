@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 # Import app components
 from app.models.asset import Asset, AssetMetadata
 from app.models.enrichment import Enrichment, EnrichmentMetadata
-from app.models.enums import AssetType, EnrichmentStatus, EnrichmentMethod
+from app.models.enums import EnrichmentStatus, EnrichmentMethod
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ def sample_asset():
 
     return Asset(
         id="arn:aws:ecs:ap-southeast-2:123456789:service/prod-cluster/api-service",
-        type=AssetType.ECS_SERVICE,
+        type="AWS::ECS::Service",
         name="api-service",
         region="ap-southeast-2",
         account_id="123456789",

@@ -7,7 +7,6 @@ import logging
 from datetime import datetime
 from typing import Any
 from app.collectors.base import BaseCollector
-from app.models.enums import AWS_CONFIG_TYPE_MAPPING, AssetType
 from app.models.asset import Asset, AssetMetadata
 
 logger = logging.getLogger(__name__)
@@ -27,7 +26,8 @@ class AWSConfigCollector(BaseCollector):
         Collect assets from AWS Config snapshot.
 
         Args:
-            s3_key: Specific S3 key to process. If None, processes latest snapshot.
+            s3_key: Specific S3 key to process. If None, processes latest snapshots
+                    from all accounts and regions.
 
         Returns:
             list[Asset]: List of collected assets
@@ -37,42 +37,114 @@ class AWSConfigCollector(BaseCollector):
         )
 
         try:
-            # If no specific key provided, get the latest snapshot
-            if not s3_key:
-                s3_key = self._get_latest_snapshot_key()
+            # If specific key provided, process only that snapshot
+            if s3_key:
+                snapshot_keys = [s3_key]
+            else:
+                # Get latest snapshots from all accounts/regions
+                snapshot_keys = self._get_latest_snapshots_per_account_region()
 
-            if not s3_key:
-                logger.warning("No AWS Config snapshot found")
+            if not snapshot_keys:
+                logger.warning("No AWS Config snapshots found")
                 return []
 
-            # Download and parse the snapshot
-            snapshot_data = self._download_snapshot(s3_key)
+            logger.info(f"Found {len(snapshot_keys)} snapshot(s) to process")
 
-            if not snapshot_data:
-                logger.warning(f"Failed to download snapshot: {s3_key}")
-                return []
+            # Process all snapshots
+            all_assets = []
+            for key in snapshot_keys:
+                # Download and parse the snapshot
+                snapshot_data = self._download_snapshot(key)
 
-            # Transform configuration items to assets
-            assets = []
-            config_items = snapshot_data.get("configurationItems", [])
-            logger.info(f"Processing {len(config_items)} configuration items")
-
-            for config_item in config_items:
-                try:
-                    asset = self.transform(config_item)
-                    if asset:
-                        assets.append(asset)
-                except Exception as e:
-                    logger.error(
-                        f"Failed to transform config item {config_item.get('resourceId')}: {e}"
-                    )
+                if not snapshot_data:
+                    logger.warning(f"Failed to download snapshot: {key}")
                     continue
 
-            logger.info(f"Successfully collected {len(assets)} assets")
-            return assets
+                # Transform configuration items to assets
+                config_items = snapshot_data.get("configurationItems", [])
+                logger.info(f"Processing {len(config_items)} items from {key}")
+
+                for config_item in config_items:
+                    try:
+                        asset = self.transform(config_item)
+                        if asset:
+                            all_assets.append(asset)
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to transform config item {config_item.get('resourceId')}: {e}"
+                        )
+                        continue
+
+            logger.info(f"Successfully collected {len(all_assets)} assets from {len(snapshot_keys)} snapshot(s)")
+            return all_assets
 
         except Exception as e:
             logger.error(f"Error collecting from AWS Config: {e}")
+            return []
+
+    def _get_latest_snapshots_per_account_region(self) -> list[str]:
+        """
+        Get the latest ConfigSnapshot from each account/region combination.
+
+        Returns:
+            list[str]: List of S3 keys for latest snapshots from each account/region
+        """
+        try:
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.config_bucket,
+                Prefix="AWSLogs/",
+                MaxKeys=10000
+            )
+
+            if "Contents" not in response:
+                return []
+
+            # Filter for ConfigSnapshot files
+            snapshot_files = [
+                obj
+                for obj in response["Contents"]
+                if "ConfigSnapshot" in obj["Key"]
+                and obj["Key"].endswith(".json.gz")
+            ]
+
+            if not snapshot_files:
+                logger.info("No ConfigSnapshot files found, looking for ConfigHistory")
+                # Fall back to ConfigHistory
+                history_files = [
+                    obj
+                    for obj in response["Contents"]
+                    if "ConfigHistory" in obj["Key"]
+                    and obj["Key"].endswith(".json.gz")
+                ]
+                if not history_files:
+                    return []
+                snapshot_files = history_files
+
+            # Group by account/region and get the latest from each
+            from collections import defaultdict
+            account_region_snapshots = defaultdict(list)
+
+            for obj in snapshot_files:
+                # Parse the key to extract account and region
+                # Format: AWSLogs/{account}/Config/{region}/YYYY/MM/DD/ConfigSnapshot/...
+                parts = obj["Key"].split("/")
+                if len(parts) >= 4:
+                    account_id = parts[1]
+                    region = parts[3]
+                    key = f"{account_id}/{region}"
+                    account_region_snapshots[key].append(obj)
+
+            # Get the most recent snapshot from each account/region
+            latest_snapshots = []
+            for key, snapshots in account_region_snapshots.items():
+                latest = max(snapshots, key=lambda x: x["LastModified"])
+                latest_snapshots.append(latest["Key"])
+                logger.info(f"Latest snapshot for {key}: {latest['Key']}")
+
+            return latest_snapshots
+
+        except Exception as e:
+            logger.error(f"Error finding snapshots: {e}")
             return []
 
     def _get_latest_snapshot_key(self) -> str | None:
@@ -180,14 +252,12 @@ class AWSConfigCollector(BaseCollector):
             Asset | None: Transformed asset or None if unsupported type
         """
         try:
+            # Use AWS resource type directly (e.g., "AWS::EC2::Instance")
+            # This allows us to capture ALL AWS resource types without maintenance
             resource_type = config_item.get("resourceType")
 
-            # Map AWS Config resource type to our AssetType
-            asset_type = AWS_CONFIG_TYPE_MAPPING.get(resource_type, AssetType.UNKNOWN)
-
-            # Skip unknown types
-            if asset_type == AssetType.UNKNOWN:
-                logger.debug(f"Skipping unknown resource type: {resource_type}")
+            if not resource_type:
+                logger.warning("Config item missing resourceType, skipping")
                 return None
 
             # Extract core fields
@@ -243,7 +313,7 @@ class AWSConfigCollector(BaseCollector):
             # Create Asset
             asset = Asset(
                 id=arn,
-                type=asset_type,
+                type=resource_type,  # Use AWS type directly (e.g., "AWS::EC2::Instance")
                 name=resource_name,
                 region=region,
                 account_id=account_id,

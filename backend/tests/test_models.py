@@ -6,7 +6,6 @@ import pytest
 from datetime import datetime
 from app.models.asset import Asset, AssetMetadata
 from app.models.enrichment import Enrichment, EnrichmentMetadata
-from app.models.enums import AssetType, EnrichmentStatus, EnrichmentMethod
 
 
 class TestAssetModel:
@@ -15,7 +14,7 @@ class TestAssetModel:
     def test_create_asset(self, sample_asset):
         """Test creating an asset."""
         assert sample_asset.id.startswith("arn:aws:ecs:")
-        assert sample_asset.type == AssetType.ECS_SERVICE
+        assert sample_asset.type == "AWS::ECS::Service"
         assert sample_asset.name == "api-service"
         assert sample_asset.region == "ap-southeast-2"
         assert sample_asset.account_id == "123456789"

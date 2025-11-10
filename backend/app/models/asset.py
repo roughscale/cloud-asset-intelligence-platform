@@ -5,7 +5,7 @@ Asset data models representing AWS resources.
 from datetime import datetime
 from typing import Any, Optional
 from pydantic import BaseModel, Field
-from app.models.enums import AssetType, RelationshipType
+from app.models.enums import RelationshipType
 
 
 class AssetMetadata(BaseModel):
@@ -33,7 +33,7 @@ class Asset(BaseModel):
 
     # Identity
     id: str = Field(description="Unique identifier (typically ARN)")
-    type: AssetType = Field(description="Asset type classification")
+    type: str = Field(description="Resource type (e.g., 'AWS::EC2::Instance', 'ec2_instance')")
     name: str = Field(description="Human-readable resource name")
 
     # AWS Context
@@ -127,7 +127,7 @@ class MergedAsset(BaseModel):
 
     # Core asset data
     id: str
-    type: AssetType
+    type: str
     name: str
     region: str
     account_id: str

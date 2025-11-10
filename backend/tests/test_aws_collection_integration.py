@@ -16,7 +16,6 @@ import gzip
 
 from app.collectors.aws_config import AWSConfigCollector
 from app.services.collection_service import CollectionService
-from app.models.enums import AssetType
 
 
 @pytest.mark.integration
@@ -106,9 +105,9 @@ class TestAWSConfigCollectionWorkflow:
 
         # Verify collected assets
         assert len(assets) == 3
-        assert assets[0].type == AssetType.ECS_SERVICE
-        assert assets[1].type == AssetType.RDS_INSTANCE
-        assert assets[2].type == AssetType.LAMBDA_FUNCTION
+        assert assets[0].type == "AWS::ECS::Service"
+        assert assets[1].type == "AWS::RDS::DBInstance"
+        assert assets[2].type == "AWS::Lambda::Function"
 
         # Verify asset details
         assert assets[0].name == "api-service"
